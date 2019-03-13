@@ -226,19 +226,24 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean)
     */
   def copying(expected: Set[ActorRef], insertConfirmed: Boolean): Receive = {
 
-    case CopyFinished =>
-      log.info(s"Copy finished ${sender.path}")
-      val nextSet = expected - sender
-      if (nextSet.nonEmpty) {
-        context.become(copying(nextSet, false))
-      } else {
+    case OperationFinished(_) =>
+      if (expected.isEmpty) {
         context.parent ! CopyFinished
-        context.become(copying(nextSet, true))
+        self ! PoisonPill
+      } else {
+        context.become(copying(expected, insertConfirmed = true))
       }
 
-    case OperationFinished(id) =>
-      log.debug(s"Finished copy operation $id")
-      context.parent ! CopyFinished
+    case _: CopyFinished.type =>
+      ((expected - sender).isEmpty, insertConfirmed) match {
+        case (true, true) =>
+          context.parent ! CopyFinished
+          self ! PoisonPill
+        case (true, false) =>
+          context.become(copying(Set.empty, insertConfirmed))
+        case (false, _) =>
+          context.become(copying(expected - sender, insertConfirmed))
+      }
   }
 
 }
